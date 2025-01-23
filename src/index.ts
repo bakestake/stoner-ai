@@ -1,51 +1,36 @@
-import { DirectClient } from "@elizaos/client-direct";
-import {
-  AgentRuntime,
-  elizaLogger,
-  settings,
-  stringToUuid,
-  type Character,
-} from "@elizaos/core";
-import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
-import { createNodePlugin } from "@elizaos/plugin-node";
-import { solanaPlugin } from "@elizaos/plugin-solana";
+import {DirectClient} from "@elizaos/client-direct";
+import {AgentRuntime, elizaLogger, settings, stringToUuid, type Character} from "@elizaos/core";
+import {bootstrapPlugin} from "@elizaos/plugin-bootstrap";
+import {createNodePlugin} from "@elizaos/plugin-node";
+import {solanaPlugin} from "@elizaos/plugin-solana";
+import {evmPlugin} from "@elizaos/plugin-evm";
 import fs from "fs";
 import net from "net";
 import path from "path";
-import { fileURLToPath } from "url";
-import { initializeDbCache } from "./cache/index.ts";
-import { character } from "./character.ts";
-import { startChat } from "./chat/index.ts";
-import { initializeClients } from "./clients/index.ts";
-import {
-  getTokenForProvider,
-  loadCharacters,
-  parseArguments,
-} from "./config/index.ts";
-import { initializeDatabase } from "./database/index.ts";
+import {fileURLToPath} from "url";
+import {initializeDbCache} from "./cache/index.ts";
+import {character} from "./character.ts";
+import {startChat} from "./chat/index.ts";
+import {initializeClients} from "./clients/index.ts";
+import {getTokenForProvider, loadCharacters, parseArguments} from "./config/index.ts";
+import {initializeDatabase} from "./database/index.ts";
+import {acceptBribe} from "./actions/acceptBribe.ts";
+import dotenv from "dotenv";
+import {verifyBribe} from "./actions/verifyBribe.ts";
+dotenv.config({path: "../.env"});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const wait = (minTime: number = 1000, maxTime: number = 3000) => {
-  const waitTime =
-    Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
+  const waitTime = Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
   return new Promise((resolve) => setTimeout(resolve, waitTime));
 };
 
 let nodePlugin: any | undefined;
 
-export function createAgent(
-  character: Character,
-  db: any,
-  cache: any,
-  token: string
-) {
-  elizaLogger.success(
-    elizaLogger.successesTitle,
-    "Creating runtime for character",
-    character.name,
-  );
+export function createAgent(character: Character, db: any, cache: any, token: string) {
+  elizaLogger.success(elizaLogger.successesTitle, "Creating runtime for character", character.name);
 
   nodePlugin ??= createNodePlugin();
 
@@ -55,13 +40,9 @@ export function createAgent(
     modelProvider: character.modelProvider,
     evaluators: [],
     character,
-    plugins: [
-      bootstrapPlugin,
-      nodePlugin,
-      character.settings?.secrets?.WALLET_PUBLIC_KEY ? solanaPlugin : null,
-    ].filter(Boolean),
+    plugins: [bootstrapPlugin, nodePlugin, character.settings?.secrets?.WALLET_PUBLIC_KEY ? solanaPlugin : null].filter(Boolean),
     providers: [],
-    actions: [],
+    actions: [acceptBribe, verifyBribe],
     services: [],
     managers: [],
     cacheManager: cache,
@@ -77,7 +58,7 @@ async function startAgent(character: Character, directClient: DirectClient) {
     const dataDir = path.join(__dirname, "../data");
 
     if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+      fs.mkdirSync(dataDir, {recursive: true});
     }
 
     const db = initializeDatabase(dataDir);
@@ -98,10 +79,7 @@ async function startAgent(character: Character, directClient: DirectClient) {
 
     return runtime;
   } catch (error) {
-    elizaLogger.error(
-      `Error starting agent for character ${character.name}:`,
-      error,
-    );
+    elizaLogger.error(`Error starting agent for character ${character.name}:`, error);
     console.error(error);
     throw error;
   }
@@ -165,7 +143,7 @@ const startAgents = async () => {
   }
 
   const isDaemonProcess = process.env.DAEMON_PROCESS === "true";
-  if(!isDaemonProcess) {
+  if (!isDaemonProcess) {
     elizaLogger.log("Chat started. Type 'exit' to quit.");
     const chat = startChat(characters);
     chat();

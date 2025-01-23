@@ -1,0 +1,12 @@
+
+Code to invoke a contract
+// const response = await runtime.triggerAction("INVOKE_CONTRACT", {
+//   contractAddress: "0x123...",
+//   method: "transfer",
+//   abi: [...],
+//   args: {
+//     to: "0x456...",
+//     amount: "1000000000000000000"
+//   },
+//   network: "base"
+// });
