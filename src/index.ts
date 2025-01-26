@@ -3,7 +3,6 @@ import {AgentRuntime, elizaLogger, settings, stringToUuid, type Character} from 
 import {bootstrapPlugin} from "@elizaos/plugin-bootstrap";
 import {createNodePlugin} from "@elizaos/plugin-node";
 import {solanaPlugin} from "@elizaos/plugin-solana";
-import {evmPlugin} from "@elizaos/plugin-evm";
 import fs from "fs";
 import net from "net";
 import path from "path";
@@ -14,9 +13,8 @@ import {startChat} from "./chat/index.ts";
 import {initializeClients} from "./clients/index.ts";
 import {getTokenForProvider, loadCharacters, parseArguments} from "./config/index.ts";
 import {initializeDatabase} from "./database/index.ts";
-import {acceptBribe} from "./actions/acceptBribe.ts";
 import dotenv from "dotenv";
-import {verifyBribe} from "./actions/verifyBribe.ts";
+import bakelandPlugin from "./plugin/index.ts";
 dotenv.config({path: "../.env"});
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,9 +38,9 @@ export function createAgent(character: Character, db: any, cache: any, token: st
     modelProvider: character.modelProvider,
     evaluators: [],
     character,
-    plugins: [bootstrapPlugin, nodePlugin, character.settings?.secrets?.WALLET_PUBLIC_KEY ? solanaPlugin : null].filter(Boolean),
+    plugins: [bootstrapPlugin, nodePlugin, bakelandPlugin, character.settings?.secrets?.WALLET_PUBLIC_KEY ? solanaPlugin : null].filter(Boolean),
     providers: [],
-    actions: [acceptBribe, verifyBribe],
+    actions: [],
     services: [],
     managers: [],
     cacheManager: cache,

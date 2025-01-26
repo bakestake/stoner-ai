@@ -1,15 +1,16 @@
 import {Action, ActionExample, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State} from "@elizaos/core";
 import {ethers} from "ethers";
 import {z} from "zod";
+import {BribeAdpater, bribes} from "../../adapter/BribeAdpater";
 
-export const bribeMsgSchema = z.object({
+const bribeMsgSchema = z.object({
   pool: z.string().min(1).toUpperCase(),
   userAddress: z.string().min(1).toUpperCase(),
   chain: z.string().toLowerCase().min(1),
 });
 
-const bribeMsgTemplate = `Look at user's FIRST MESSAGE in the conversation where user requested you to accept bribe.
-Based on ONLY that message, extract the bribe details:
+const bribeMsgTemplate = `Look at your LAST RESPONSE in the conversation where you sent details to users for sending $BUDS bribe to you.
+Based on ONLY that last message, extract the bribe details:
 
 Bribe details must include chain, userAddress, and pool. For example:
 - For "Send your $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x5EF0d89a9E859CFcA0C52C9A17CFF93f1A6A19C1 \nchain - berachainBartio \n for- bakeland" -> use "bakeland" as pool & "berachainBartio" as chain & "0x5EF0d89a9E859CFcA0C52C9A17CFF93f1A6A19C1" as userAddress
@@ -33,12 +34,14 @@ export const acceptBribe: Action = {
   name: "ACCEPT_BRIBE",
   similes: ["TAKE_BRIBE", "GIVING_BRIBE", "BRIBING_FOR", "WANT_TO_BRIBE"],
   description: "Bribing agent for competing and getting rewards in form of buybacks, giveaways",
-  validate: async (runtime: IAgentRuntime) => {
+  suppressInitialMessage: true,
+  validate: async (runtime: IAgentRuntime, message: Memory, state: State) => {
     return !!(runtime.getSetting("WALLET_PRIVATE_KEY") && runtime.getSetting("ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO"));
   },
   handler: async (runtime: IAgentRuntime, message: Memory, state: State, _options: Record<string, unknown>, callback?: HandlerCallback): Promise<boolean> => {
     let content;
     try {
+      elizaLogger.log("ENTERED ACTION");
       state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
 
       const context = composeContext({
@@ -55,7 +58,16 @@ export const acceptBribe: Action = {
       const parseResult = bribeMsgSchema.safeParse(content);
       if (!parseResult.success) {
         throw new Error(`Invalid bribe message content: ${JSON.stringify(parseResult.error.errors, null, 2)}`);
+      } else {
+        if (callback) {
+          callback({
+            text: `Send you $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- content.userAddress \nchain - content.chain \n for- content.pool`,
+          });
+        }
       }
+      elizaLogger.log("PARSED MESSAGE");
+
+      elizaLogger.log(content.userAddress, content.chain, content.pool);
 
       const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);
       const tokenAddress = process.env.BUDS_ADDRESS;
@@ -67,10 +79,15 @@ export const acceptBribe: Action = {
       let amount;
       let i = 0;
       let fromBlock = await provider.getBlockNumber();
+
+      elizaLogger.log("FROM BLOCK", fromBlock);
       const filter = tokenContract.filters.Transfer(fromAddress, toAddress);
+      elizaLogger.log("FILTER DONE");
       let iface = new ethers.Interface(abi);
+      elizaLogger.log("INTERFACE DONE");
       const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      while (i < 10 && amount == null) {
+      elizaLogger.log("ENTERING LOOP");
+      while (i < 10) {
         await delay(30000); // Wait for 30 seconds
         const currentBlock = await provider.getBlockNumber();
         const events = await tokenContract.queryFilter(filter, fromBlock, currentBlock);
@@ -79,8 +96,11 @@ export const acceptBribe: Action = {
             console.log(`${event}`);
             const logs = iface.parseLog(event);
             console.log(logs);
-            const {_from, _to, _amount} = logs.args;
-            amount = _amount;
+            const args = logs.args;
+            amount = args[2];
+            console.log(amount);
+            elizaLogger.log("Jumping out of loop");
+            i = 11;
           });
         }
         fromBlock = currentBlock;
@@ -90,11 +110,32 @@ export const acceptBribe: Action = {
       // save data in db
       // add
 
-      if (amount)
-        callback({
-          text: `got your bribe \nfrom- ${content.userAddress} \nchain - polygon \n for- yeetard`,
-          content: {address: "0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C"},
-        });
+      const adapter = new BribeAdpater();
+      const poolId = await adapter.getPoolByName(runtime, content.pool);
+      const bribeData: bribes = {
+        poolName: content.pool,
+        pool: poolId.id,
+        amount: amount,
+        address: fromAddress,
+        chain: content.chain,
+      };
+      await adapter.saveOrUpdateBribe(runtime, bribeData);
+
+      if (amount) {
+        if (callback) {
+          callback({
+            text: `got your bribe \nfrom- ${content.userAddress} \nchain - polygon \n for- yeetard`,
+            content: {address: "0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C"},
+          });
+        }
+      } else {
+        if (callback) {
+          callback({
+            text: `failed to get your bribe`,
+          });
+        }
+        return false;
+      }
 
       return true;
     } catch (error) {
@@ -127,16 +168,10 @@ export const acceptBribe: Action = {
           action: "ACCEPT_BRIBE",
         },
       },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "Received bribe\nfrom- 0x5EF0d89a9E859CFcA0C52C9A17CFF93f1A6A19C1 \nchain - berachainBartio \n for- bakeland",
-        },
-      },
     ],
     [
       {
-        user: "{{user2}}",
+        user: "{{user1}}",
         content: {
           text: "take my bribe for yeetard pool on polygon from 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2",
         },
@@ -144,20 +179,14 @@ export const acceptBribe: Action = {
       {
         user: "{{agent}}",
         content: {
-          text: "Send you $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - polygon \n for- yeetard",
+          text: "Send your $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - polygon \n for- yeetard",
           action: "ACCEPT_BRIBE",
-        },
-      },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "got your bribe\nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - polygon \n for- yeetard",
         },
       },
     ],
     [
       {
-        user: "{{user3}}",
+        user: "{{user1}}",
         content: {
           text: "sending you a bribe for deadpool pool on monad from 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2",
         },
@@ -169,12 +198,8 @@ export const acceptBribe: Action = {
           action: "ACCEPT_BRIBE",
         },
       },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "got your bribe\nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - monad \n for- deadpool",
-        },
-      },
     ],
   ] as ActionExample[][],
-};
+} as Action;
+
+export default acceptBribe;
