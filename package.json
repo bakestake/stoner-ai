@@ -11,19 +11,18 @@
     "stop:service:all": "pm2 stop all"
   },
   "dependencies": {
-    "@elizaos/adapter-postgres": "0.1.7",
-    "@elizaos/adapter-sqlite": "0.1.7",
-    "@elizaos/client-auto": "0.1.7",
-    "@elizaos/client-direct": "0.1.7",
-    "@elizaos/client-telegram": "0.1.7",
-    "@elizaos/client-twitter": "0.1.7",
-    "@elizaos/core": "0.1.7",
-    "@elizaos/plugin-bootstrap": "0.1.7",
-    "@elizaos/plugin-image-generation": "0.1.7",
-    "@elizaos/plugin-node": "0.1.7",
-    "@elizaos/plugin-solana": "0.1.7",
-    "@elizaos/plugin-starknet": "0.1.7",
-    "@elizaos/plugin-tee": "^0.1.7",
+    "@elizaos/adapter-postgres": "0.1.8",
+    "@elizaos/adapter-sqlite": "0.1.8",
+    "@elizaos/client-auto": "0.1.8",
+    "@elizaos/client-direct": "0.1.8",
+    "@elizaos/client-telegram": "0.1.8",
+    "@elizaos/client-twitter": "0.1.8",
+    "@elizaos/core": "0.1.8",
+    "@elizaos/plugin-bootstrap": "0.1.8",
+    "@elizaos/plugin-image-generation": "0.1.8",
+    "@elizaos/plugin-node": "0.1.8",
+    "@elizaos/plugin-solana": "0.1.8",
+    "@elizaos/plugin-starknet": "0.1.8",
     "@tavily/core": "0.0.2",
     "@types/pg": "^8.11.11",
     "amqplib": "0.10.5",
@@ -49,6 +48,9 @@
   },
   "pnpm": {
     "overrides": {
+      "@elizaos/core": "0.1.8",
+      "@elizaos/plugin-tee": "0.1.8",
+      "@elizaos/plugin-sgx": "0.1.8",
       "onnxruntime-node": "1.20.0"
     }
   },

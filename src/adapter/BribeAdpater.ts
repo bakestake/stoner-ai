@@ -1,5 +1,4 @@
 import {IAgentRuntime} from "@elizaos/core";
-import {Pool} from "pg";
 
 export interface poolInfo {
   id: number;
@@ -19,12 +18,140 @@ export interface bribes {
   pool: number;
   poolName: string;
   amount: bigint;
+  epoch: number;
+}
+
+export interface epochDecision {
+  epoch: number;
+  dec: number; // 0 or 1.. 0 for burn, 1 for yeet buyback
+  amount: bigint; // amount to burned or yeet buyback
 }
 
 export class BribeAdpater {
+  // Helper function to map a database row to a poolInfo object
+  private mapRowToPoolInfo(row: any): poolInfo {
+    return {
+      id: row.id,
+      name: row.name,
+      chain: row.chain,
+      pooledBribes: BigInt(row.pooled_bribes || 0),
+    };
+  }
+
+  // Helper function to map a database row to a bribes object
+  private mapRowToBribe(row: any): bribes {
+    return {
+      address: row.address,
+      chain: row.chain,
+      pool: row.pool,
+      poolName: row.pool_name,
+      amount: BigInt(row.amount || 0),
+      epoch: row.epoch, // Include the epoch field
+    };
+  }
+
+  private mapRowToEpochDecision(row: any): epochDecision {
+    return {
+      epoch: row.epoch,
+      dec: row.dec,
+      amount: BigInt(row.amount || 0),
+    };
+  }
+
+  // Function to insert a new epoch decision (once set, it cannot be updated)
+  async insertEpochDecision(runtime: IAgentRuntime, decision: epochDecision): Promise<void> {
+    const db = runtime.databaseAdapter.db;
+
+    // Validate input data
+    if (!decision.epoch || decision.epoch <= 0) {
+      throw new Error("Invalid epoch value");
+    }
+    if (decision.dec !== 0 && decision.dec !== 1) {
+      throw new Error("Invalid decision value, must be 0 (burn) or 1 (yeet buyback)");
+    }
+    if (decision.amount <= 0n) {
+      throw new Error("Amount must be greater than zero");
+    }
+
+    try {
+      await db.query("BEGIN"); // Start transaction
+
+      // Check if the epoch decision already exists (making it immutable)
+      const existingDecision = await this.getEpochDecision(runtime, decision.epoch);
+      if (existingDecision) {
+        throw new Error(`Epoch decision for epoch ${decision.epoch} already exists and cannot be modified.`);
+      }
+
+      // Insert new epoch decision
+      const query = `
+        INSERT INTO epoch_decision (epoch, dec, amount)
+        VALUES ($1, $2, $3)
+      `;
+      const values = [decision.epoch, decision.dec, decision.amount];
+
+      await db.query(query, values);
+      await db.query("COMMIT"); // Commit transaction
+    } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
+      console.error(`Error inserting epoch decision for epoch ${decision.epoch}:`, err);
+      throw new Error(`Failed to insert epoch decision for epoch ${decision.epoch}: ${err.message}`);
+    }
+  }
+
+  // Function to retrieve epoch decision by epoch
+  async getEpochDecision(runtime: IAgentRuntime, epoch: number): Promise<epochDecision | null> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+      SELECT epoch, dec, amount
+      FROM epoch_decision
+      WHERE epoch = $1
+    `;
+    try {
+      const result = await db.query(query, [epoch]);
+      if (result.rows.length > 0) {
+        return this.mapRowToEpochDecision(result.rows[0]);
+      } else {
+        return null; // No decision found for the given epoch
+      }
+    } catch (err) {
+      console.error(`Error retrieving epoch decision for epoch ${epoch}:`, err);
+      throw new Error(`Failed to retrieve epoch decision for epoch ${epoch}: ${err.message}`);
+    }
+  }
+
+  // Function to retrieve all epoch decisions
+  async getAllEpochDecisions(runtime: IAgentRuntime): Promise<epochDecision[]> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+      SELECT epoch, dec, amount
+      FROM epoch_decision
+      ORDER BY epoch ASC
+    `;
+    try {
+      const result = await db.query(query);
+      return result.rows.map(this.mapRowToEpochDecision);
+    } catch (err) {
+      console.error("Error retrieving all epoch decisions:", err);
+      throw new Error(`Failed to retrieve epoch decisions: ${err.message}`);
+    }
+  }
+
   // Function to register a new pool
   async registerPool(runtime: IAgentRuntime, poolData: poolInfo): Promise<void> {
     const db = runtime.databaseAdapter.db;
+
+    // Validate input data
+    if (!poolData.id || poolData.id <= 0) {
+      throw new Error("Invalid pool ID");
+    }
+    if (!poolData.name || typeof poolData.name !== "string") {
+      throw new Error("Invalid pool name");
+    }
+    if (!poolData.chain || typeof poolData.chain !== "string") {
+      throw new Error("Invalid chain");
+    }
 
     const query = `
       INSERT INTO pools (id, name, chain, pooled_bribes)
@@ -36,8 +163,8 @@ export class BribeAdpater {
     try {
       await db.query(query, values);
     } catch (err) {
-      console.error("Error registering pool:", err);
-      throw err;
+      console.error(`Error registering pool ${poolData.name}:`, err);
+      throw new Error(`Failed to register pool ${poolData.name}: ${err.message}`);
     }
   }
 
@@ -45,25 +172,19 @@ export class BribeAdpater {
   async getPoolByName(runtime: IAgentRuntime, poolName: string): Promise<poolInfo | null> {
     const db = runtime.databaseAdapter.db;
     const query = `
-    SELECT id, name, chain, pooled_bribes
-    FROM pools
-    WHERE name = $1
-  `;
+      SELECT id, name, chain, pooled_bribes
+      FROM pools
+      WHERE name = $1
+    `;
     try {
       const result = await db.query(query, [poolName]);
       if (result.rows.length === 0) {
         return null; // Pool not found
       }
-      const row = result.rows[0];
-      return {
-        id: row.id,
-        name: row.name,
-        chain: row.chain,
-        pooledBribes: BigInt(row.pooled_bribes),
-      };
+      return this.mapRowToPoolInfo(result.rows[0]);
     } catch (err) {
-      console.error("Error retrieving pool by name:", err);
-      throw err;
+      console.error(`Error retrieving pool by name ${poolName}:`, err);
+      throw new Error(`Failed to retrieve pool by name ${poolName}: ${err.message}`);
     }
   }
 
@@ -76,8 +197,8 @@ export class BribeAdpater {
       const result = await db.query(query, [poolName]);
       return result.rows.length > 0;
     } catch (err) {
-      console.error("Error checking pool registration:", err);
-      throw err;
+      console.error(`Error checking pool registration for ${poolName}:`, err);
+      throw new Error(`Failed to check pool registration for ${poolName}: ${err.message}`);
     }
   }
 
@@ -85,20 +206,15 @@ export class BribeAdpater {
   async getAllPools(runtime: IAgentRuntime): Promise<poolInfo[]> {
     const db = runtime.databaseAdapter.db;
     const query = `
-    SELECT id, name, chain, pooled_bribes
-    FROM pools
-  `;
+      SELECT id, name, chain, pooled_bribes
+      FROM pools
+    `;
     try {
       const result = await db.query(query);
-      return result.rows.map((row: any) => ({
-        id: row.id,
-        name: row.name,
-        chain: row.chain,
-        pooledBribes: BigInt(row.pooled_bribes),
-      }));
+      return result.rows.map(this.mapRowToPoolInfo);
     } catch (err) {
       console.error("Error retrieving all pools:", err);
-      throw err;
+      throw new Error(`Failed to retrieve all pools: ${err.message}`);
     }
   }
 
@@ -106,25 +222,46 @@ export class BribeAdpater {
   async saveOrUpdateBribe(runtime: IAgentRuntime, bribeData: bribes): Promise<void> {
     const db = runtime.databaseAdapter.db;
 
-    // Check if the pool is registered
-    const isRegistered = await this.isPoolRegistered(runtime, bribeData.poolName);
-    if (!isRegistered) {
-      throw new Error(`Pool with ID ${bribeData.pool} is not registered.`);
+    // Validate input data
+    if (!bribeData.address || typeof bribeData.address !== "string") {
+      throw new Error("Invalid address");
+    }
+    if (!bribeData.chain || typeof bribeData.chain !== "string") {
+      throw new Error("Invalid chain");
+    }
+    if (!bribeData.pool || bribeData.pool <= 0) {
+      throw new Error("Invalid pool ID");
+    }
+    if (!bribeData.poolName || typeof bribeData.poolName !== "string") {
+      throw new Error("Invalid pool name");
+    }
+    if (!bribeData.epoch || bribeData.epoch <= 0) {
+      throw new Error("Invalid epoch");
     }
 
-    const query = `
-      INSERT INTO bribes (address, chain, pool, pool_name, amount)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (address, pool, chain) 
-      DO UPDATE SET amount = EXCLUDED.amount
-    `;
-    const values = [bribeData.address, bribeData.chain, bribeData.pool, bribeData.poolName, bribeData.amount];
-
     try {
+      await db.query("BEGIN"); // Start transaction
+
+      // Check if the pool is registered
+      const isRegistered = await this.isPoolRegistered(runtime, bribeData.poolName);
+      if (!isRegistered) {
+        throw new Error(`Pool with ID ${bribeData.pool} is not registered.`);
+      }
+
+      const query = `
+        INSERT INTO bribes (address, chain, pool, pool_name, amount, epoch)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (address, pool, chain, epoch) 
+        DO UPDATE SET amount = EXCLUDED.amount
+      `;
+      const values = [bribeData.address, bribeData.chain, bribeData.pool, bribeData.poolName, bribeData.amount, bribeData.epoch];
+
       await db.query(query, values);
+      await db.query("COMMIT"); // Commit transaction
     } catch (err) {
-      console.error("Error saving or updating bribe:", err);
-      throw err;
+      await db.query("ROLLBACK"); // Rollback on error
+      console.error(`Error saving or updating bribe for address ${bribeData.address}:`, err);
+      throw new Error(`Failed to save or update bribe for address ${bribeData.address}: ${err.message}`);
     }
   }
 
@@ -133,22 +270,16 @@ export class BribeAdpater {
     const db = runtime.databaseAdapter.db;
 
     const query = `
-      SELECT address, chain, pool, pool_name, amount
+      SELECT address, chain, pool, pool_name, amount, epoch
       FROM bribes
       WHERE address = $1
     `;
     try {
       const result = await db.query(query, [address]);
-      return result.rows.map((row: any) => ({
-        address: row.address,
-        chain: row.chain,
-        pool: row.pool,
-        poolName: row.pool_name,
-        amount: row.amount,
-      }));
+      return result.rows.map(this.mapRowToBribe);
     } catch (err) {
-      console.error("Error retrieving bribes by user:", err);
-      throw err;
+      console.error(`Error retrieving bribes by user ${address}:`, err);
+      throw new Error(`Failed to retrieve bribes by user ${address}: ${err.message}`);
     }
   }
 
@@ -157,22 +288,16 @@ export class BribeAdpater {
     const db = runtime.databaseAdapter.db;
 
     const query = `
-      SELECT address, chain, pool, pool_name, amount
+      SELECT address, chain, pool, pool_name, amount, epoch
       FROM bribes
       WHERE pool = $1
     `;
     try {
       const result = await db.query(query, [poolId]);
-      return result.rows.map((row: any) => ({
-        address: row.address,
-        chain: row.chain,
-        pool: row.pool,
-        poolName: row.pool_name,
-        amount: row.amount,
-      }));
+      return result.rows.map(this.mapRowToBribe);
     } catch (err) {
-      console.error("Error retrieving bribes by pool:", err);
-      throw err;
+      console.error(`Error retrieving bribes by pool ${poolId}:`, err);
+      throw new Error(`Failed to retrieve bribes by pool ${poolId}: ${err.message}`);
     }
   }
 
@@ -187,10 +312,66 @@ export class BribeAdpater {
     `;
     try {
       const result = await db.query(query, [poolId]);
-      return BigInt(result.rows[0].totalBribes);
+      return BigInt(result.rows[0].totalbribes);
     } catch (err) {
-      console.error("Error retrieving total bribes for pool:", err);
-      throw err;
+      console.error(`Error retrieving total bribes for pool ${poolId}:`, err);
+      throw new Error(`Failed to retrieve total bribes for pool ${poolId}: ${err.message}`);
+    }
+  }
+
+  async getMostBribedPool(runtime: IAgentRuntime): Promise<poolInfo | null> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+      SELECT p.id, p.name, p.chain, p.pooled_bribes
+      FROM pools p
+      INNER JOIN (
+        SELECT pool, SUM(amount) AS total_bribes
+        FROM bribes
+        GROUP BY pool
+      ) b ON p.id = b.pool
+      ORDER BY b.total_bribes DESC
+      LIMIT 1
+    `;
+
+    try {
+      const result = await db.query(query);
+      if (result.rows.length === 0) {
+        return null; // No pools found
+      }
+      return this.mapRowToPoolInfo(result.rows[0]);
+    } catch (err) {
+      console.error("Error retrieving the most bribed pool:", err);
+      throw new Error(`Failed to retrieve the most bribed pool: ${err.message}`);
+    }
+  }
+
+  // Function to delete a pool
+  async deletePool(runtime: IAgentRuntime, poolId: number): Promise<void> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `DELETE FROM pools WHERE id = $1`;
+    try {
+      await db.query(query, [poolId]);
+    } catch (err) {
+      console.error(`Error deleting pool ${poolId}:`, err);
+      throw new Error(`Failed to delete pool ${poolId}: ${err.message}`);
+    }
+  }
+
+  // Function to delete a bribe
+  async deleteBribe(runtime: IAgentRuntime, address: string, poolId: number, chain: string, epoch: number): Promise<void> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+      DELETE FROM bribes
+      WHERE address = $1 AND pool = $2 AND chain = $3 AND epoch = $4
+    `;
+    try {
+      await db.query(query, [address, poolId, chain, epoch]);
+    } catch (err) {
+      console.error(`Error deleting bribe for address ${address}, pool ${poolId}, chain ${chain}, epoch ${epoch}:`, err);
+      throw new Error(`Failed to delete bribe for address ${address}, pool ${poolId}, chain ${chain}, epoch ${epoch}: ${err.message}`);
     }
   }
 }

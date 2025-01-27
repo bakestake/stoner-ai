@@ -2,13 +2,19 @@ import {Action, ActionExample, composeContext, elizaLogger, generateObjectDeprec
 import {ethers} from "ethers";
 import {z} from "zod";
 import {BribeAdpater, bribes} from "../../adapter/BribeAdpater";
+import {diamondAbi} from "../../../artifacts/diamondAbi";
 
+// Schema for validating bribe details
 const bribeMsgSchema = z.object({
   pool: z.string().min(1).toUpperCase(),
-  userAddress: z.string().min(1).toUpperCase(),
-  chain: z.string().toLowerCase().min(1),
+  userAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address")
+    .toUpperCase(),
+  chain: z.enum(["berachainBartio", "polygon", "monad"]),
 });
 
+// Template for extracting bribe details
 const bribeMsgTemplate = `Look at your LAST RESPONSE in the conversation where you sent details to users for sending $BUDS bribe to you.
 Based on ONLY that last message, extract the bribe details:
 
@@ -30,6 +36,22 @@ Bribe details must include chain, userAddress, and pool. For example:
 Recent conversation:
 {{recentMessages}}`;
 
+// Helper function to generate callback messages
+const generateConfirmationMessage = (userAddress: string, chain: string, pool: string) => ({
+  text: `Got it! I'm waiting for your $BUDS bribe to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- ${userAddress} \nchain - ${chain} \n for- ${pool}.`,
+});
+
+const generateSuccessMessage = (amount: bigint, userAddress: string, chain: string, pool: string) => ({
+  text: `Success! Received your bribe of ${amount.toString()} $BUDS from ${userAddress} for pool ${pool} on ${chain}.`,
+});
+
+const generateFailureMessage = () => ({
+  text: `Sorry, I didn't receive your bribe within the time limit. Please try again.`,
+});
+
+// Helper function to delay execution
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const acceptBribe: Action = {
   name: "ACCEPT_BRIBE",
   similes: ["TAKE_BRIBE", "GIVING_BRIBE", "BRIBING_FOR", "WANT_TO_BRIBE"],
@@ -41,13 +63,11 @@ export const acceptBribe: Action = {
   handler: async (runtime: IAgentRuntime, message: Memory, state: State, _options: Record<string, unknown>, callback?: HandlerCallback): Promise<boolean> => {
     let content;
     try {
-      elizaLogger.log("ENTERED ACTION");
-      state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
+      elizaLogger.info("Entered ACCEPT_BRIBE action", {state, message});
 
-      const context = composeContext({
-        state,
-        template: bribeMsgTemplate,
-      });
+      // Compose state and generate bribe details
+      state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
+      const context = composeContext({state, template: bribeMsgTemplate});
 
       content = await generateObjectDeprecated({
         runtime,
@@ -55,86 +75,81 @@ export const acceptBribe: Action = {
         modelClass: ModelClass.SMALL,
       });
 
+      // Validate bribe details
       const parseResult = bribeMsgSchema.safeParse(content);
       if (!parseResult.success) {
         throw new Error(`Invalid bribe message content: ${JSON.stringify(parseResult.error.errors, null, 2)}`);
-      } else {
-        if (callback) {
-          callback({
-            text: `Send you $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- content.userAddress \nchain - content.chain \n for- content.pool`,
-          });
-        }
       }
-      elizaLogger.log("PARSED MESSAGE");
 
-      elizaLogger.log(content.userAddress, content.chain, content.pool);
+      // Send confirmation message
+      if (callback) {
+        callback(generateConfirmationMessage(content.userAddress, content.chain, content.pool));
+      }
 
+      elizaLogger.info("Parsed bribe details", {content});
+
+      // Initialize Ethereum provider and contract
       const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);
       const tokenAddress = process.env.BUDS_ADDRESS;
       const abi = ["event Transfer(address indexed from, address indexed to, uint256 value)"];
       const tokenContract = new ethers.Contract(tokenAddress, abi, provider);
+      const bakelandContract = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider);
+
       const fromAddress = content.userAddress;
       const toAddress = "0xf102dcb813dbe6d66a7101fa57d2530632ab9c9c";
 
-      let amount;
-      let i = 0;
-      let fromBlock = await provider.getBlockNumber();
+      // Poll for Transfer events
+      let amount: bigint | null = null;
+      const startBlock = await provider.getBlockNumber();
+      const endTime = Date.now() + 300000; // 5 minutes timeout
+      let currentBlock = startBlock;
 
-      elizaLogger.log("FROM BLOCK", fromBlock);
-      const filter = tokenContract.filters.Transfer(fromAddress, toAddress);
-      elizaLogger.log("FILTER DONE");
-      let iface = new ethers.Interface(abi);
-      elizaLogger.log("INTERFACE DONE");
-      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      elizaLogger.log("ENTERING LOOP");
-      while (i < 10) {
-        await delay(30000); // Wait for 30 seconds
-        const currentBlock = await provider.getBlockNumber();
-        const events = await tokenContract.queryFilter(filter, fromBlock, currentBlock);
-        if (events.length > 0) {
-          events.forEach((event) => {
-            console.log(`${event}`);
-            const logs = iface.parseLog(event);
-            console.log(logs);
-            const args = logs.args;
-            amount = args[2];
-            console.log(amount);
-            elizaLogger.log("Jumping out of loop");
-            i = 11;
-          });
+      while (Date.now() < endTime) {
+        const latestBlock = await provider.getBlockNumber();
+        if (latestBlock > currentBlock) {
+          const filter = tokenContract.filters.Transfer(fromAddress, toAddress);
+          const events = await tokenContract.queryFilter(filter, currentBlock, latestBlock);
+
+          if (events.length > 0) {
+            const event = events[0];
+            const logs = tokenContract.interface.parseLog(event);
+            amount = logs.args[2];
+            break; // Exit loop if bribe is detected
+          }
+
+          currentBlock = latestBlock;
         }
-        fromBlock = currentBlock;
-        i++;
+
+        await delay(15000); // Poll every 15 seconds
       }
 
-      // save data in db
-      // add
+      if (!amount) {
+        if (callback) {
+          callback(generateFailureMessage());
+        }
+        return false;
+      }
 
+      // Save bribe data in the database
       const adapter = new BribeAdpater();
-      const poolId = await adapter.getPoolByName(runtime, content.pool);
+      const pool = await adapter.getPoolByName(runtime, content.pool);
+      if (!pool) {
+        throw new Error(`Pool ${content.pool} not found.`);
+      }
+
       const bribeData: bribes = {
         poolName: content.pool,
-        pool: poolId.id,
+        pool: pool.id,
         amount: amount,
         address: fromAddress,
         chain: content.chain,
+        epoch: await bakelandContract.getCurrentEpoch(),
       };
       await adapter.saveOrUpdateBribe(runtime, bribeData);
 
-      if (amount) {
-        if (callback) {
-          callback({
-            text: `got your bribe \nfrom- ${content.userAddress} \nchain - polygon \n for- yeetard`,
-            content: {address: "0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C"},
-          });
-        }
-      } else {
-        if (callback) {
-          callback({
-            text: `failed to get your bribe`,
-          });
-        }
-        return false;
+      // Notify user of successful bribe
+      if (callback) {
+        callback(generateSuccessMessage(amount, content.userAddress, content.chain, content.pool));
       }
 
       return true;
@@ -147,7 +162,6 @@ export const acceptBribe: Action = {
       if (callback) {
         callback({
           text: `Error accepting bribe: ${error.message}`,
-          content: {error: error.message},
         });
       }
       return false;

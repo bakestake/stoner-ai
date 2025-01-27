@@ -6,7 +6,7 @@ export const character: Character = {
   name: "Stoner dallal",
   plugins: [],
   clients: [],
-  modelProvider: ModelProviderName.OPENROUTER,
+  modelProvider: ModelProviderName.DEEPSEEK,
   settings: {
     secrets: {},
     voice: {
