@@ -1,33 +1,53 @@
 import {IAgentRuntime} from "@elizaos/core";
+import { Pool } from "pg";
 
-export interface poolInfo {
-  id: number;
-  name: string;
-  chain: string;
-  pooledBribes: bigint;
-}
+class BribeAdapter {
 
-export interface user {
-  address: string;
-  bribes: bigint;
-}
+  // Initialize database tables
+  async initialize(runtime: IAgentRuntime): Promise<void> {
 
-export interface bribes {
-  address: string;
-  chain: string;
-  pool: number;
-  poolName: string;
-  amount: bigint;
-  epoch: number;
-}
+    const db : Pool = runtime.databaseAdapter.db;
 
-export interface epochDecision {
-  epoch: number;
-  dec: number; // 0 or 1.. 0 for burn, 1 for yeet buyback
-  amount: bigint; // amount to burned or yeet buyback
-}
+    try {
+      // Create pools table
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS pools (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          chain TEXT NOT NULL,
+          pooled_bribes BIGINT DEFAULT 0
+        )
+      `);
 
-export class BribeAdpater {
+      // Create bribes table
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS bribes (
+          address TEXT NOT NULL,
+          chain TEXT NOT NULL,
+          pool INTEGER NOT NULL,
+          pool_name TEXT NOT NULL,
+          amount BIGINT NOT NULL,
+          epoch INTEGER NOT NULL,
+          PRIMARY KEY (address, pool, chain, epoch),
+          FOREIGN KEY (pool) REFERENCES pools(id)
+        )
+      `);
+
+      // Create epoch_decision table
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS epoch_decision (
+          epoch INTEGER PRIMARY KEY,
+          dec INTEGER NOT NULL CHECK (dec IN (0, 1)),
+          amount BIGINT NOT NULL
+        )
+      `);
+
+    } catch (err) {
+      console.error("Error initializing database tables:", err);
+      throw new Error(`Failed to initialize database tables: ${err.message}`);
+    }
+  }
+
   // Helper function to map a database row to a poolInfo object
   private mapRowToPoolInfo(row: any): poolInfo {
     return {
@@ -69,7 +89,7 @@ export class BribeAdpater {
     if (decision.dec !== 0 && decision.dec !== 1) {
       throw new Error("Invalid decision value, must be 0 (burn) or 1 (yeet buyback)");
     }
-    if (decision.amount <= 0n) {
+    if (decision.amount <= 0) {
       throw new Error("Amount must be greater than zero");
     }
 
@@ -347,12 +367,13 @@ export class BribeAdpater {
   }
 
   // Function to delete a pool
-  async deletePool(runtime: IAgentRuntime, poolId: number): Promise<void> {
+  async deletePool(runtime: IAgentRuntime, poolId: number): Promise<boolean> {
     const db = runtime.databaseAdapter.db;
 
     const query = `DELETE FROM pools WHERE id = $1`;
     try {
       await db.query(query, [poolId]);
+      return true;
     } catch (err) {
       console.error(`Error deleting pool ${poolId}:`, err);
       throw new Error(`Failed to delete pool ${poolId}: ${err.message}`);
@@ -375,3 +396,32 @@ export class BribeAdpater {
     }
   }
 }
+
+export interface poolInfo {
+  id: number;
+  name: string;
+  chain: string;
+  pooledBribes: bigint;
+}
+
+export interface user {
+  address: string;
+  bribes: bigint;
+}
+
+export interface bribes {
+  address: string;
+  chain: string;
+  pool: number;
+  poolName: string;
+  amount: bigint;
+  epoch: number;
+}
+
+export interface epochDecision {
+  epoch: number;
+  dec: number; // 0 or 1.. 0 for burn, 1 for yeet buyback
+  amount: bigint; // amount to burned or yeet buyback
+}
+
+export default BribeAdapter;

@@ -1,21 +1,23 @@
-import {DirectClient} from "@elizaos/client-direct";
-import {AgentRuntime, elizaLogger, settings, stringToUuid, type Character} from "@elizaos/core";
-import {bootstrapPlugin} from "@elizaos/plugin-bootstrap";
-import {createNodePlugin} from "@elizaos/plugin-node";
-import {solanaPlugin} from "@elizaos/plugin-solana";
+import { DirectClient } from "@elizaos/client-direct";
+import { AgentRuntime, elizaLogger, settings, stringToUuid, type Character } from "@elizaos/core";
+import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
+import { createNodePlugin } from "@elizaos/plugin-node";
+import { solanaPlugin } from "@elizaos/plugin-solana";
+import dotenv from "dotenv";
 import fs from "fs";
 import net from "net";
 import path from "path";
-import {fileURLToPath} from "url";
-import {initializeDbCache} from "./cache/index.ts";
-import {character} from "./character.ts";
-import {startChat} from "./chat/index.ts";
-import {initializeClients} from "./clients/index.ts";
-import {getTokenForProvider, loadCharacters, parseArguments} from "./config/index.ts";
-import {initializeDatabase} from "./database/index.ts";
-import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { initializeDbCache } from "./cache/index.ts";
+import { character } from "./character.ts";
+import { startChat } from "./chat/index.ts";
+import { initializeClients } from "./clients/index.ts";
+import { getTokenForProvider, loadCharacters, parseArguments } from "./config/index.ts";
+import { initializeDatabase } from "./database/index.ts";
 import bakelandPlugin from "./plugin/index.ts";
-dotenv.config({path: "../.env"});
+import BribeAdapter from "./adapter/bribeAdapter.ts";
+import { Pool } from "pg";
+dotenv.config({ path: "../.env" });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,17 +58,20 @@ async function startAgent(character: Character, directClient: DirectClient) {
     const dataDir = path.join(__dirname, "../data");
 
     if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, {recursive: true});
+      fs.mkdirSync(dataDir, { recursive: true });
     }
 
     const db = initializeDatabase(dataDir);
-
+    const adapter = new BribeAdapter();
+    
     await db.init();
 
     const cache = initializeDbCache(character, db);
     const runtime = createAgent(character, db, cache, token);
 
     await runtime.initialize();
+
+    await adapter.initialize(runtime);
 
     runtime.clients = await initializeClients(character, runtime);
 

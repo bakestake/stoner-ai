@@ -1,14 +1,11 @@
 import {Action, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State} from "@elizaos/core";
 import {bigint, z} from "zod";
-import {BribeAdpater, poolInfo} from "../../adapter/BribeAdpater";
+import {poolInfo} from "../../adapter/bribeAdapter";
+import BribeAdapter from "../../adapter/bribeAdapter.ts";
 import {ethers} from "ethers";
-import {diamondAbi} from "../../../artifacts/diamondAbi";
-
+import { diamondAbi } from "../../../artifacts/diamondAbi.ts";
 const poolMsgSchema = z.object({
-  id: z.number().min(1),
-  name: z.string().min(1).toUpperCase(),
   chain: z.string().toLowerCase().min(1),
-  pooledBribes: z.bigint(),
 });
 
 const poolMsgTemplate = `Look at user's FIRST RESPONSE in the conversation where user sent message to register pool.
@@ -17,7 +14,7 @@ Based on ONLY that first message, extract the details:
 Details must include chain. For example:
 - For "Register new pool on berachain" ->"berachain" as chain
 
-- For "Add new pool on  polygon" -> "polygon" as chain
+- For "Add new pool on polygon" -> "polygon" as chain
 
 \`\`\`json
 {
@@ -57,9 +54,9 @@ export const registerPool: Action = {
         throw new Error(`Invalid bribe message content: ${JSON.stringify(parseResult.error.errors, null, 2)}`);
       }
 
-      elizaLogger.log(content.name);
+      elizaLogger.log(content.chain);
 
-      const bribeAdapter = new BribeAdpater();
+      const bribeAdapter = new BribeAdapter();
 
       const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);
       const diamond = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider);

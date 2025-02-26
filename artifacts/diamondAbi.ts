@@ -46,4 +46,23 @@ export const diamondAbi = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_pool",
+        "type": "uint256"
+      }
+    ],
+    "name": "isWhitelistedPoolById",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
 ];

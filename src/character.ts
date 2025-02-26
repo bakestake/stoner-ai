@@ -1,5 +1,4 @@
-import {Character, Clients, defaultCharacter, ModelProviderName} from "@elizaos/core";
-import {berachainTestnetbArtio} from "viem/chains";
+import { Character, defaultCharacter, ModelProviderName } from "@elizaos/core";
 
 export const character: Character = {
   ...defaultCharacter,

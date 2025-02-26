@@ -1,6 +1,7 @@
 import {Action, elizaLogger, IAgentRuntime, Memory, State, HandlerCallback, ActionExample} from "@elizaos/core";
 import {ethers} from "ethers";
-import {BribeAdpater, poolInfo} from "../../adapter/BribeAdpater";
+import {poolInfo} from "../../adapter/bribeAdapter";
+import BribeAdapter from "../../adapter/bribeAdapter";
 import {burnBuds} from "../utils/burnBuds";
 import {berachainTestnetbArtio} from "viem/chains";
 import buyYeet from "../utils/buyYeet";
@@ -21,7 +22,7 @@ export const finalizeRound: Action = {
       elizaLogger.info("Entered FINALIZE_ROUND action", {state, message});
 
       // Record epoch-wise data in the database
-      const adapter = new BribeAdpater();
+      const adapter = new BribeAdapter();
 
       // Initialize Ethereum provider and Bakeland contract
       const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);

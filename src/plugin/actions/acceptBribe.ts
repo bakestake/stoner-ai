@@ -1,16 +1,66 @@
-import {Action, ActionExample, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State} from "@elizaos/core";
-import {ethers} from "ethers";
-import {z} from "zod";
-import {BribeAdpater, bribes} from "../../adapter/BribeAdpater";
-import {diamondAbi} from "../../../artifacts/diamondAbi";
+import { Action, ActionExample, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State } from "@elizaos/core";
+import { ethers } from "ethers";
+import { bribes, poolInfo } from "../../adapter/bribeAdapter";
+import BribeAdapter from "../../adapter/bribeAdapter.ts";
+import { z } from "zod";
+
+const diamondAbi = [
+  {
+    inputs: [],
+    name: "getNumberOfPools",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "poolId",
+        type: "uint256",
+      },
+    ],
+    name: "getPoolData",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "stakedBudsVolume",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "noOfStakers",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "currentPooledRewards",
+        type: "uint256",
+      },
+      {
+        internalType: "string",
+        name: "name",
+        type: "string",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
 
 // Schema for validating bribe details
 const bribeMsgSchema = z.object({
-  pool: z.string().min(1).toUpperCase(),
+  pool: z.string().min(1),
   userAddress: z
     .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address")
-    .toUpperCase(),
+    .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address"),
   chain: z.enum(["berachainBartio", "polygon", "monad"]),
 });
 
@@ -63,11 +113,11 @@ export const acceptBribe: Action = {
   handler: async (runtime: IAgentRuntime, message: Memory, state: State, _options: Record<string, unknown>, callback?: HandlerCallback): Promise<boolean> => {
     let content;
     try {
-      elizaLogger.info("Entered ACCEPT_BRIBE action", {state, message});
+      elizaLogger.info("Entered ACCEPT_BRIBE action", { state, message });
 
       // Compose state and generate bribe details
       state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
-      const context = composeContext({state, template: bribeMsgTemplate});
+      const context = composeContext({ state, template: bribeMsgTemplate });
 
       content = await generateObjectDeprecated({
         runtime,
@@ -81,12 +131,26 @@ export const acceptBribe: Action = {
         throw new Error(`Invalid bribe message content: ${JSON.stringify(parseResult.error.errors, null, 2)}`);
       }
 
-      // Send confirmation message
+      elizaLogger.info("Parsed bribe details", { content });
+
+      // Send confirmation message before starting the polling loop
       if (callback) {
-        callback(generateConfirmationMessage(content.userAddress, content.chain, content.pool));
+        await callback(generateConfirmationMessage(content.userAddress, content.chain, content.pool));
       }
 
-      elizaLogger.info("Parsed bribe details", {content});
+      const adapter = new BribeAdapter();
+
+      ///Remove this later after testing
+      const poolInfo: poolInfo = {
+        id: 1,
+        name: content.pool,
+        chain: content.chain,
+        pooledBribes: BigInt(0)
+      };
+      await adapter.registerPool(runtime, poolInfo);
+
+      elizaLogger.log("Registered pool", { data: await adapter.isPoolRegistered(runtime, content.pool) });
+
 
       // Initialize Ethereum provider and contract
       const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);
@@ -131,19 +195,19 @@ export const acceptBribe: Action = {
       }
 
       // Save bribe data in the database
-      const adapter = new BribeAdpater();
-      const pool = await adapter.getPoolByName(runtime, content.pool);
-      if (!pool) {
-        throw new Error(`Pool ${content.pool} not found.`);
-      }
+      
+      // const pool = await adapter.getPoolByName(runtime, content.pool);
+      // if (!pool) {
+      //   throw new Error(`Pool ${content.pool} not found.`);
+      // }
 
       const bribeData: bribes = {
         poolName: content.pool,
-        pool: pool.id,
+        pool: 2, /// remove this later
         amount: amount,
         address: fromAddress,
         chain: content.chain,
-        epoch: await bakelandContract.getCurrentEpoch(),
+        epoch: 1,
       };
       await adapter.saveOrUpdateBribe(runtime, bribeData);
 
@@ -151,6 +215,7 @@ export const acceptBribe: Action = {
       if (callback) {
         callback(generateSuccessMessage(amount, content.userAddress, content.chain, content.pool));
       }
+      elizaLogger.log(await adapter.getBribesByPool(runtime, 1));
 
       return true;
     } catch (error) {
