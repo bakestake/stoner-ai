@@ -8,7 +8,7 @@ const poolMsgSchema = z.object({
   chain: z.string().toLowerCase().min(1),
 });
 
-const poolMsgTemplate = `Look at user's FIRST RESPONSE in the conversation where user sent message to delete pool.
+const poolMsgTemplate = `Look at user's FIRST MESSAGE in the conversation where user sent message to delete pool.
 Based on ONLY that first message, extract the details:
 
 Details must include chain. For example:
