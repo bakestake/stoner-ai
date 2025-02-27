@@ -75,6 +75,7 @@ class BribeAdapter {
       epoch: row.epoch,
       dec: row.dec,
       amount: BigInt(row.amount || 0),
+      pool: row.pool,
     };
   }
 
@@ -104,10 +105,10 @@ class BribeAdapter {
 
       // Insert new epoch decision
       const query = `
-        INSERT INTO epoch_decision (epoch, dec, amount)
-        VALUES ($1, $2, $3)
+        INSERT INTO epoch_decision (epoch, dec, amount, pool)
+        VALUES ($1, $2, $3, $4)
       `;
-      const values = [decision.epoch, decision.dec, decision.amount];
+      const values = [decision.epoch, decision.dec, decision.amount, decision.pool];
 
       await db.query(query, values);
       await db.query("COMMIT"); // Commit transaction
@@ -123,7 +124,7 @@ class BribeAdapter {
     const db = runtime.databaseAdapter.db;
 
     const query = `
-      SELECT epoch, dec, amount
+      SELECT epoch, dec, amount, pool
       FROM epoch_decision
       WHERE epoch = $1
     `;
@@ -145,7 +146,7 @@ class BribeAdapter {
     const db = runtime.databaseAdapter.db;
 
     const query = `
-      SELECT epoch, dec, amount
+      SELECT epoch, dec, amount, pool
       FROM epoch_decision
       ORDER BY epoch ASC
     `;
@@ -268,13 +269,23 @@ class BribeAdapter {
         throw new Error(`Pool with ID ${bribeData.pool} is not registered.`);
       }
 
+      const queryExistingBribe = `
+        SELECT amount FROM bribes WHERE address = $1 AND pool = $2 AND chain = $3 AND epoch = $4
+      `;
+      const existingBribe = await db.query(queryExistingBribe, [bribeData.address, bribeData.pool, bribeData.chain, bribeData.epoch]);
+
+      let amount;
+      if(existingBribe.rows.length > 0) {
+        amount = existingBribe.rows[0].amount + bribeData.amount;
+      }
+
       const query = `
         INSERT INTO bribes (address, chain, pool, pool_name, amount, epoch)
         VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (address, pool, chain, epoch) 
-        DO UPDATE SET amount = EXCLUDED.amount
+        DO UPDATE SET amount = bribes.amount + EXCLUDED.amount
       `;
-      const values = [bribeData.address, bribeData.chain, bribeData.pool, bribeData.poolName, bribeData.amount, bribeData.epoch];
+      const values = [bribeData.address, bribeData.chain, bribeData.pool, bribeData.poolName, amount, bribeData.epoch];
 
       await db.query(query, values);
       await db.query("COMMIT"); // Commit transaction
@@ -422,6 +433,7 @@ export interface epochDecision {
   epoch: number;
   dec: number; // 0 or 1.. 0 for burn, 1 for yeet buyback
   amount: bigint; // amount to burned or yeet buyback
+  pool: number;
 }
 
 export default BribeAdapter;
