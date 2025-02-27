@@ -158,7 +158,7 @@ async function buyYeet(amount: bigint): Promise<bigint> {
     args: [account.address],
   });
 
-  return balanceBefore - balanceAfter;
+  return balanceAfter - balanceBefore;
 }
 
 export default buyYeet;
