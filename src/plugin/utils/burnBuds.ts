@@ -1,6 +1,5 @@
 import {Address, Chain, createPublicClient, createWalletClient, getContract, http, publicActions, WalletClient} from "viem";
 import {budsAbi} from "../../../artifacts/budsAbi";
-import {berachainTestnet, berachainTestnetbArtio} from "viem/chains";
 import {privateKeyToAccount} from "viem/accounts";
 
 export const burnBuds = async (amount: bigint, chain: Chain) => {

@@ -60,12 +60,12 @@ export const finalizeRound: Action = {
 
       // Execute decision using existing functions
       if (decision === "burn") {
-        await adapter.insertEpochDecision(runtime, {amount: totalLost, epoch: epoch, dec: 0});
+        await adapter.insertEpochDecision(runtime, {amount: totalLost, epoch: epoch, dec: 0, pool: mostBribedPool.id});
         await burnBuds(totalLost, berachainTestnetbArtio);
       } else {
         const amoutToBuyback = BigInt(1.25) * mostBribedPool.pooledBribes;
         const buyedYeetAmount = await buyYeet(amoutToBuyback);
-        await adapter.insertEpochDecision(runtime, {amount: buyedYeetAmount, epoch: epoch, dec: 1});
+        await adapter.insertEpochDecision(runtime, {amount: buyedYeetAmount, epoch: epoch, dec: 1, pool: mostBribedPool.id});
       }
 
       // Notify user of decision
