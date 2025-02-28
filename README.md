@@ -19,5 +19,10 @@ Bakeland AI agent is a social and Defi for bakeland users.
 - community management - manages the community
 - and more
 
+## Actions
 
-
+- RegisterPool
+- DeletePool
+- AcceptBribe
+- finalizeRound
+- claimBuyback
