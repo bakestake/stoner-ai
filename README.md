@@ -68,7 +68,7 @@ Users bribe $BUDS tokens to protect their preferred pools against raids. The poo
 
 - **Buyback**: If the agent determines that metrics support a buyback, it purchases Yeet tokens. Users who bribed for the winning pool can then claim these tokens based on their contribution.
   
-- **Burn**: If a buyback is not suitable, 50% of the $BUDS bribed for the most bribed pool is burned, reducing token supply and enhancing its deflationary effects.
+- **Burn**: If a buyback is not suitable, burn total amount of $BUDS lost to raids in most bribed pool.
 
 ## Automation and Governance
 
