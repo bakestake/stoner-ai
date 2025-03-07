@@ -42,6 +42,19 @@ class BribeAdapter {
         )
       `);
 
+      await db.query(
+        `
+        CREATE TABLE bribe_pool (
+          id SERIAL PRIMARY KEY,
+          user_address VARCHAR(255) NOT NULL,
+          amount DECIMAL(18, 8) NOT NULL,
+          chain VARCHAR(50) NOT NULL,
+          pool VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        `
+      );
+
     } catch (err) {
       console.error("Error initializing database tables:", err);
       throw new Error(`Failed to initialize database tables: ${err.message}`);
@@ -406,6 +419,46 @@ class BribeAdapter {
       throw new Error(`Failed to delete bribe for address ${address}, pool ${poolId}, chain ${chain}, epoch ${epoch}: ${err.message}`);
     }
   }
+
+  async saveBribeToPool(runtime: IAgentRuntime, userAddress, amount, chain, pool) {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+        INSERT INTO bribe_pool (user_address, amount, chain, pool)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *;
+    `;
+
+    const values = [userAddress, amount, chain, pool];
+
+    try {
+        const res = await db.query(query, values);
+        return res.rows[0]; // returns the saved bribe
+    } catch (err) {
+        console.error('Error saving bribe to pool:', err);
+        throw err;
+    }
+  }
+
+  async deleteBribeFromPool(runtime: IAgentRuntime, userAddress, chain, pool) {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+        DELETE FROM bribe_pool 
+        WHERE user_address = $1 AND chain = $2 AND pool = $3
+        RETURNING *;
+    `;
+    const values = [userAddress, chain, pool];
+    try {
+        const res = await db.query(query, values);
+        return res.rows[0]; // returns the deleted bribe if successful
+    } catch (err) {
+        console.error('Error deleting bribe from pool:', err);
+        throw err;
+    }
+  }
+
+
 }
 
 export interface poolInfo {

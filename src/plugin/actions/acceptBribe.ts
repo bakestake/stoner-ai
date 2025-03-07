@@ -52,6 +52,19 @@ const diamondAbi = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    "inputs": [],
+    "name": "getCurrentEpoch",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
 ];
 
 
@@ -157,10 +170,11 @@ export const acceptBribe: Action = {
       const tokenAddress = process.env.BUDS_ADDRESS;
       const abi = ["event Transfer(address indexed from, address indexed to, uint256 value)"];
       const tokenContract = new ethers.Contract(tokenAddress, abi, provider);
-      const bakelandContract = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider);
-
+      const diamondContract = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider)
       const fromAddress = content.userAddress;
       const toAddress = "0xf102dcb813dbe6d66a7101fa57d2530632ab9c9c";
+
+      const curEpoch = await diamondContract.getCurrentEpoch();
 
       // Poll for Transfer events
       let amount: bigint | null = null;
@@ -196,18 +210,18 @@ export const acceptBribe: Action = {
 
       // Save bribe data in the database
       
-      // const pool = await adapter.getPoolByName(runtime, content.pool);
-      // if (!pool) {
-      //   throw new Error(`Pool ${content.pool} not found.`);
-      // }
+      const pool = await adapter.getPoolByName(runtime, content.pool);
+      if (!pool) {
+        throw new Error(`Pool ${content.pool} not found.`);
+      }
 
       const bribeData: bribes = {
-        poolName: content.pool,
-        pool: 2, /// remove this later
-        amount: amount,
+        poolName: pool.name,
+        pool: pool.id, 
+        amount: ethers.parseEther(content.amount),
         address: fromAddress,
         chain: content.chain,
-        epoch: 1,
+        epoch: curEpoch,
       };
       await adapter.saveOrUpdateBribe(runtime, bribeData);
 
