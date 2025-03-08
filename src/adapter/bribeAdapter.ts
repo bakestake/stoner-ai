@@ -47,10 +47,9 @@ class BribeAdapter {
         CREATE TABLE bribe_pool (
           id SERIAL PRIMARY KEY,
           user_address VARCHAR(255) NOT NULL,
-          amount DECIMAL(18, 8) NOT NULL,
           chain VARCHAR(50) NOT NULL,
           pool VARCHAR(255) NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          created_at BIGINT NOT NULL
         )
         `
       );
@@ -319,9 +318,12 @@ class BribeAdapter {
       WHERE address = $1
     `;
     try {
+      await db.query("BEGIN"); // start transaction
       const result = await db.query(query, [address]);
+      await db.query("COMMIT"); // Commit transaction
       return result.rows.map(this.mapRowToBribe);
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error(`Error retrieving bribes by user ${address}:`, err);
       throw new Error(`Failed to retrieve bribes by user ${address}: ${err.message}`);
     }
@@ -337,9 +339,12 @@ class BribeAdapter {
       WHERE pool = $1
     `;
     try {
+      await db.query("BEGIN"); // start transaction
       const result = await db.query(query, [poolId]);
+      await db.query("COMMIT"); // Commit transaction
       return result.rows.map(this.mapRowToBribe);
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error(`Error retrieving bribes by pool ${poolId}:`, err);
       throw new Error(`Failed to retrieve bribes by pool ${poolId}: ${err.message}`);
     }
@@ -355,9 +360,12 @@ class BribeAdapter {
       WHERE pool = $1
     `;
     try {
+      await db.query("BEGIN"); // start transaction
       const result = await db.query(query, [poolId]);
+      await db.query("COMMIT"); // Commit transaction
       return BigInt(result.rows[0].totalbribes);
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error(`Error retrieving total bribes for pool ${poolId}:`, err);
       throw new Error(`Failed to retrieve total bribes for pool ${poolId}: ${err.message}`);
     }
@@ -379,12 +387,15 @@ class BribeAdapter {
     `;
 
     try {
+      await db.query("BEGIN"); // start transaction
       const result = await db.query(query);
+      await db.query("COMMIT"); // Commit transaction
       if (result.rows.length === 0) {
         return null; // No pools found
       }
       return this.mapRowToPoolInfo(result.rows[0]);
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error("Error retrieving the most bribed pool:", err);
       throw new Error(`Failed to retrieve the most bribed pool: ${err.message}`);
     }
@@ -396,9 +407,12 @@ class BribeAdapter {
 
     const query = `DELETE FROM pools WHERE id = $1`;
     try {
+      await db.query("BEGIN"); // start transaction
       await db.query(query, [poolId]);
+      await db.query("COMMIT"); // Commit transaction
       return true;
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error(`Error deleting pool ${poolId}:`, err);
       throw new Error(`Failed to delete pool ${poolId}: ${err.message}`);
     }
@@ -413,51 +427,79 @@ class BribeAdapter {
       WHERE address = $1 AND pool = $2 AND chain = $3 AND epoch = $4
     `;
     try {
+      await db.query("BEGIN"); // start transaction
       await db.query(query, [address, poolId, chain, epoch]);
+      await db.query("COMMIT"); // Commit transaction
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
       console.error(`Error deleting bribe for address ${address}, pool ${poolId}, chain ${chain}, epoch ${epoch}:`, err);
       throw new Error(`Failed to delete bribe for address ${address}, pool ${poolId}, chain ${chain}, epoch ${epoch}: ${err.message}`);
     }
   }
 
-  async saveBribeToPool(runtime: IAgentRuntime, userAddress, amount, chain, pool) {
+  async saveBribeToMemPool(runtime: IAgentRuntime, userAddress, chain, pool, createdAt) : Promise<bribeFromMemPool> {
     const db = runtime.databaseAdapter.db;
 
     const query = `
-        INSERT INTO bribe_pool (user_address, amount, chain, pool)
+        INSERT INTO bribe_pool (address, chain, pool, created_at)
         VALUES ($1, $2, $3, $4)
-        RETURNING *;
     `;
 
-    const values = [userAddress, amount, chain, pool];
+    const values = [userAddress, chain, pool, createdAt];
 
     try {
-        const res = await db.query(query, values);
-        return res.rows[0]; // returns the saved bribe
+      await db.query("BEGIN"); // Start transaction
+      const res = await db.query(query, values);
+      await db.query("COMMIT"); // Commit transaction
+      return res.rows[0]; // returns the saved bribe
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
         console.error('Error saving bribe to pool:', err);
         throw err;
     }
   }
 
-  async deleteBribeFromPool(runtime: IAgentRuntime, userAddress, chain, pool) {
+  async deleteBribeFromMemPool(runtime: IAgentRuntime, userAddress, chain, pool) : Promise<bribeFromMemPool> {
     const db = runtime.databaseAdapter.db;
 
     const query = `
         DELETE FROM bribe_pool 
-        WHERE user_address = $1 AND chain = $2 AND pool = $3
+        WHERE address = $1 AND chain = $2 AND pool = $3
         RETURNING *;
     `;
     const values = [userAddress, chain, pool];
     try {
-        const res = await db.query(query, values);
-        return res.rows[0]; // returns the deleted bribe if successful
+      await db.query("BEGIN"); // Start transaction
+      const res = await db.query(query, values);
+      await db.query("COMMIT"); // Commit transaction
+      return res.rows[0]; // returns the deleted bribe if successful
     } catch (err) {
+      await db.query("ROLLBACK"); // Rollback on error
         console.error('Error deleting bribe from pool:', err);
         throw err;
     }
   }
 
+  async retrieveBribesFromMemPool(runtime: IAgentRuntime, chain:string) : Promise<bribeFromMemPool[]> {
+    const db = runtime.databaseAdapter.db;
+
+    const query = `
+        SELECT address, chain, pool, created_at
+        FROM bribe_pool
+        WHERE chain = $1
+    `;
+
+    try {
+      await db.query("BEGIN"); // Start transaction
+      const res = await db.query(query, chain);
+      await db.query("COMMIT"); // Commit transaction
+      return res.rows[0]; // returns the bribe record including its timestamp
+    } catch (err) {
+      await db.query("ROLLBACK"); // Commit transaction
+      console.error('Error retrieving bribe from pool:', err);
+      throw err;
+    }
+  }
 
 }
 
@@ -480,6 +522,13 @@ export interface bribes {
   poolName: string;
   amount: bigint;
   epoch: number;
+}
+
+export interface bribeFromMemPool {
+  address: string;
+  chain: string;
+  pool: string;
+  created_at: number;
 }
 
 export interface epochDecision {
