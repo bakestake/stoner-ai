@@ -2,7 +2,7 @@ import { Action, ActionExample, composeContext, elizaLogger, generateObjectDepre
 import { ethers } from "ethers";
 import { bribes, poolInfo } from "../../adapter/bribeAdapter";
 import BribeAdapter from "../../adapter/bribeAdapter.ts";
-import { z } from "zod";
+import { date, z } from "zod";
 
 const diamondAbi = [
   {
@@ -99,10 +99,6 @@ Bribe details must include chain, userAddress, and pool. For example:
 Recent conversation:
 {{recentMessages}}`;
 
-// Helper function to generate callback messages
-const generateConfirmationMessage = (userAddress: string, chain: string, pool: string) => ({
-  text: `Got it! I'm waiting for your $BUDS bribe to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- ${userAddress} \nchain - ${chain} \n for- ${pool}.`,
-});
 
 const generateSuccessMessage = (amount: bigint, userAddress: string, chain: string, pool: string) => ({
   text: `Success! Received your bribe of ${amount.toString()} $BUDS from ${userAddress} for pool ${pool} on ${chain}.`,
@@ -144,94 +140,21 @@ export const acceptBribe: Action = {
         throw new Error(`Invalid bribe message content: ${JSON.stringify(parseResult.error.errors, null, 2)}`);
       }
 
-      elizaLogger.info("Parsed bribe details", { content });
-
-      // Send confirmation message before starting the polling loop
-      if (callback) {
-        await callback(generateConfirmationMessage(content.userAddress, content.chain, content.pool));
-      }
-
       const adapter = new BribeAdapter();
 
-      ///Remove this later after testing
-      const poolInfo: poolInfo = {
-        id: 1,
-        name: content.pool,
-        chain: content.chain,
-        pooledBribes: BigInt(0)
-      };
-      await adapter.registerPool(runtime, poolInfo);
+      const ts = Date.now();
 
-      elizaLogger.log("Registered pool", { data: await adapter.isPoolRegistered(runtime, content.pool) });
+      // saving the bribe in temporary bribe pool [mempool]
+      await adapter.saveBribeToMemPool(runtime, content.userAddress, content.chain, content.pool, ts);
 
-
-      // Initialize Ethereum provider and contract
-      const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_PROVIDER_BERACHAINTESTNETBARTIO);
-      const tokenAddress = process.env.BUDS_ADDRESS;
-      const abi = ["event Transfer(address indexed from, address indexed to, uint256 value)"];
-      const tokenContract = new ethers.Contract(tokenAddress, abi, provider);
-      const diamondContract = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider)
-      const fromAddress = content.userAddress;
-      const toAddress = "0xf102dcb813dbe6d66a7101fa57d2530632ab9c9c";
-
-      const curEpoch = await diamondContract.getCurrentEpoch();
-
-      // Poll for Transfer events
-      let amount: bigint | null = null;
-      const startBlock = await provider.getBlockNumber();
-      const endTime = Date.now() + 300000; // 5 minutes timeout
-      let currentBlock = startBlock;
-
-      while (Date.now() < endTime) {
-        const latestBlock = await provider.getBlockNumber();
-        if (latestBlock > currentBlock) {
-          const filter = tokenContract.filters.Transfer(fromAddress, toAddress);
-          const events = await tokenContract.queryFilter(filter, currentBlock, latestBlock);
-
-          if (events.length > 0) {
-            const event = events[0];
-            const logs = tokenContract.interface.parseLog(event);
-            amount = logs.args[2];
-            break; // Exit loop if bribe is detected
-          }
-
-          currentBlock = latestBlock;
-        }
-
-        await delay(15000); // Poll every 15 seconds
-      }
-
-      if (!amount) {
-        if (callback) {
-          callback(generateFailureMessage());
-        }
-        return false;
-      }
-
-      // Save bribe data in the database
-      
-      const pool = await adapter.getPoolByName(runtime, content.pool);
-      if (!pool) {
-        throw new Error(`Pool ${content.pool} not found.`);
-      }
-
-      const bribeData: bribes = {
-        poolName: pool.name,
-        pool: pool.id, 
-        amount: ethers.parseEther(content.amount),
-        address: fromAddress,
-        chain: content.chain,
-        epoch: curEpoch,
-      };
-      await adapter.saveOrUpdateBribe(runtime, bribeData);
-
-      // Notify user of successful bribe
       if (callback) {
-        callback(generateSuccessMessage(amount, content.userAddress, content.chain, content.pool));
+        callback({
+          text: `Waiting for bribe from ${content.userAddress} on ${content.chain} for ${content.pool} send it within 6 mins & 9 seconds to 0xf102dcb813dbe6d66a7101fa57d2530632ab9c9c`,
+       });
       }
-      elizaLogger.log(await adapter.getBribesByPool(runtime, 1));
 
       return true;
+
     } catch (error) {
       elizaLogger.error("Error accepting bribe:", {
         content,
@@ -247,51 +170,7 @@ export const acceptBribe: Action = {
     }
   },
   examples: [
-    [
-      {
-        user: "{{user1}}",
-        content: {
-          text: "accept bribe for bakeland pool on berachainBartio from 0x5EF0d89a9E859CFcA0C52C9A17CFF93f1A6A19C1",
-        },
-      },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "Send you $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x5EF0d89a9E859CFcA0C52C9A17CFF93f1A6A19C1 \nchain - berachainBartio \n for- bakeland",
-          action: "ACCEPT_BRIBE",
-        },
-      },
-    ],
-    [
-      {
-        user: "{{user1}}",
-        content: {
-          text: "take my bribe for yeetard pool on polygon from 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2",
-        },
-      },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "Send your $BUDS to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - polygon \n for- yeetard",
-          action: "ACCEPT_BRIBE",
-        },
-      },
-    ],
-    [
-      {
-        user: "{{user1}}",
-        content: {
-          text: "sending you a bribe for deadpool pool on monad from 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2",
-        },
-      },
-      {
-        user: "{{agent}}",
-        content: {
-          text: "waiting for your bribe to \n0xF102DCb813DBE6D66a7101FA57D2530632ab9C9C, \ntime limit - 5 mins \nfrom- 0x1502e497B95e7B01D16C9C4C8193E6C2636f98C2 \nchain - monad \n for- deadpool",
-          action: "ACCEPT_BRIBE",
-        },
-      },
-    ],
+    
   ] as ActionExample[][],
 } as Action;
 
