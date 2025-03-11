@@ -1,0 +1,1 @@
+export const chains = ["arbSepolia", "fuji"/*, "avax", "base", "abstract", "arbitrum", "berachain"*/]
