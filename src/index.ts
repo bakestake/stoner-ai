@@ -1,5 +1,5 @@
 import { DirectClient } from "@elizaos/client-direct";
-import { AgentRuntime, elizaLogger, settings, stringToUuid, type Character } from "@elizaos/core";
+import { AgentRuntime, elizaLogger, IAgentRuntime, settings, stringToUuid, type Character } from "@elizaos/core";
 import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
 import { createNodePlugin } from "@elizaos/plugin-node";
 import { solanaPlugin } from "@elizaos/plugin-solana";
@@ -16,11 +16,18 @@ import { getTokenForProvider, loadCharacters, parseArguments } from "./config/in
 import { initializeDatabase } from "./database/index.ts";
 import bakelandPlugin from "./plugin/index.ts";
 import BribeAdapter from "./adapter/bribeAdapter.ts";
-import { Pool } from "pg";
+import cron from 'node-cron';
+import { monitorBribes } from "./plugin/utils/monitorBribes.ts";
+import { ethers } from "ethers";
+import { diamondAbi } from "../artifacts/diamondAbi.ts";
+import {chains} from "./plugin/utils/getChains.ts"
+import { getRpc } from "./plugin/utils/getRpc.ts";
 dotenv.config({ path: "../.env" });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let agent_runtime : IAgentRuntime;
 
 export const wait = (minTime: number = 1000, maxTime: number = 3000) => {
   const waitTime = Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
@@ -49,6 +56,24 @@ export function createAgent(character: Character, db: any, cache: any, token: st
   });
 }
 
+const startCronJob = (runtime: IAgentRuntime) => {
+  // Schedule the cron job to run every minute
+  cron.schedule('* * * * *', async () => {
+    console.log('Running monitorBribes job');
+    try {
+      console.log(chains)
+      for (let chain in chains){
+        const provider = new ethers.JsonRpcProvider(await getRpc(chain));
+        const bakelandContract = new ethers.Contract(process.env.DIAMOND_ADDRESS, diamondAbi, provider);
+        const epoch = await bakelandContract.getCurrentEpoch(); // Replace with actual 
+        await monitorBribes(runtime, chain, epoch);
+      }
+    } catch (error) {
+      console.error('Error monitoring bribes:', error);
+    }
+  });
+};
+
 async function startAgent(character: Character, directClient: DirectClient) {
   try {
     character.id ??= stringToUuid(character.name);
@@ -68,6 +93,7 @@ async function startAgent(character: Character, directClient: DirectClient) {
 
     const cache = initializeDbCache(character, db);
     const runtime = createAgent(character, db, cache, token);
+    agent_runtime = runtime;
 
     await runtime.initialize();
 
@@ -151,6 +177,8 @@ const startAgents = async () => {
     const chat = startChat(characters);
     chat();
   }
+
+  startCronJob(agent_runtime);
 };
 
 startAgents().catch((error) => {

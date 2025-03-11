@@ -1,6 +1,6 @@
 import {Action, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State} from "@elizaos/core";
 import {bigint, z} from "zod";
-import {poolInfo} from "../../adapter/bribeAdapter";
+import {poolInfo} from "../../adapter/bribeAdapter.ts";
 import BribeAdapter from "../../adapter/bribeAdapter.ts";
 import {ethers} from "ethers";
 import { diamondAbi } from "../../../artifacts/diamondAbi.ts";

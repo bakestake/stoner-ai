@@ -1,5 +1,5 @@
 import {Address, Chain, createPublicClient, createWalletClient, getContract, http, publicActions, WalletClient} from "viem";
-import {budsAbi} from "../../../artifacts/budsAbi";
+import {budsAbi} from "../../../artifacts/budsAbi.ts";
 import {privateKeyToAccount} from "viem/accounts";
 
 export const burnBuds = async (amount: bigint, chain: Chain) => {

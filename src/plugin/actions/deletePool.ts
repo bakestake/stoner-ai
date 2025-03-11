@@ -1,7 +1,7 @@
 import {Action, elizaLogger, IAgentRuntime, Memory, State, HandlerCallback, composeContext, generateObjectDeprecated, ModelClass} from "@elizaos/core";
 import {ethers} from "ethers";
-import BribeAdapter from "../../adapter/bribeAdapter";
-import {diamondAbi} from "../../../artifacts/diamondAbi";
+import BribeAdapter from "../../adapter/bribeAdapter.ts";
+import {diamondAbi} from "../../../artifacts/diamondAbi.ts";
 import { z } from "zod";
 
 const poolMsgSchema = z.object({

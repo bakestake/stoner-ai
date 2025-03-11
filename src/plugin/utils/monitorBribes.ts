@@ -1,7 +1,8 @@
 import { IAgentRuntime } from "@elizaos/core";
-import BribeAdapter, { bribeFromMemPool } from "../../adapter/bribeAdapter";
+import  BribeAdapter  from "../../adapter/bribeAdapter.ts";
+import { bribeFromMemPool } from "../../adapter/bribeAdapter.ts";
 import { ethers } from "ethers";
-import { getRpc } from "./getRpc";
+import { getRpc } from "./getRpc.ts";
 
 export const monitorBribes = async(runtime: IAgentRuntime, chain: string, epoch: number) => {
     // gets invoked every minute from driver function

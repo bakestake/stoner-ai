@@ -44,7 +44,7 @@ class BribeAdapter {
 
       await db.query(
         `
-        CREATE TABLE bribe_pool (
+        CREATE TABLE IF NOT EXISTS bribe_pool (
           id SERIAL PRIMARY KEY,
           user_address VARCHAR(255) NOT NULL,
           chain VARCHAR(50) NOT NULL,

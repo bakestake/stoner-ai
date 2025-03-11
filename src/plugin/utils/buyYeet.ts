@@ -2,11 +2,7 @@ import {http, type Address, createWalletClient, maxUint256, parseEther, publicAc
 import {privateKeyToAccount} from "viem/accounts";
 import {berachainTestnetbArtio} from "viem/chains";
 
-if (!process.env.WALLET_PRIVATE_KEY) throw new Error("PRIVATE_KEY is required");
-if (!process.env.PUBLIC_API_URL) throw new Error("PUBLIC_API_URL is required");
-if (!process.env.API_KEY) throw new Error("API_KEY is required");
-
-const PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY as Address; // Private key of the account to make the trade
+const PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY; // Private key of the account to make the trade
 const PUBLIC_API_URL = process.env.OOGA_BOOGA_API_URL;
 const API_KEY = process.env.OOGA_BOOGA_API_KEY;
 
@@ -18,7 +14,7 @@ type SwapParams = {
   slippage: number; // Range from 0 to 1 to allow for price slippage
 };
 
-const account = privateKeyToAccount(PRIVATE_KEY);
+const account = privateKeyToAccount(`0x${PRIVATE_KEY}`);
 const client = createWalletClient({
   chain: berachainTestnetbArtio,
   transport: http(),

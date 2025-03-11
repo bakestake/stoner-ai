@@ -1,11 +1,11 @@
 import {Action, elizaLogger, IAgentRuntime, Memory, State, HandlerCallback, ActionExample} from "@elizaos/core";
 import {ethers} from "ethers";
-import {poolInfo} from "../../adapter/bribeAdapter";
-import BribeAdapter from "../../adapter/bribeAdapter";
-import {burnBuds} from "../utils/burnBuds";
+import {poolInfo} from "../../adapter/bribeAdapter.ts";
+import BribeAdapter from "../../adapter/bribeAdapter.ts";
+import {burnBuds} from "../utils/burnBuds.ts";
 import {berachainTestnetbArtio} from "viem/chains";
-import buyYeet from "../utils/buyYeet";
-import {diamondAbi} from "../../../artifacts/diamondAbi";
+import buyYeet from "../utils/buyYeet.ts";
+import {diamondAbi} from "../../../artifacts/diamondAbi.ts";
 import {bigint} from "zod";
 
 export const finalizeRound: Action = {

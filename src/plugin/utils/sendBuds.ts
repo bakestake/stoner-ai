@@ -1,5 +1,5 @@
 import {Address, Chain, createPublicClient, createWalletClient, getContract, http, publicActions, WalletClient} from "viem";
-import {budsAbi} from "../../../artifacts/budsAbi";
+import {budsAbi} from "../../../artifacts/budsAbi.ts";
 import {berachainTestnet, berachainTestnetbArtio} from "viem/chains";
 import {privateKeyToAccount} from "viem/accounts";
 

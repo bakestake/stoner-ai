@@ -1,9 +1,9 @@
 import { Action, composeContext, elizaLogger, generateObjectDeprecated, HandlerCallback, IAgentRuntime, Memory, ModelClass, State } from "@elizaos/core";
 import { z } from "zod";
-import BribeAdapter, { epochDecision } from "../../adapter/bribeAdapter";
+import BribeAdapter, { epochDecision } from "../../adapter/bribeAdapter.ts";
 import { ethers } from "ethers";
-import { budsAbi } from "../../../artifacts/budsAbi";
-import { diamondAbi } from "../../../artifacts/diamondAbi";
+import { budsAbi } from "../../../artifacts/budsAbi.ts";
+import { diamondAbi } from "../../../artifacts/diamondAbi.ts";
 
 
 const claimBuyBackMsgSchema = z.object({
